@@ -1,0 +1,200 @@
+---
+title: "Computational Musicology: Paul Simon"
+author: "Lieke Jacobs"
+output:
+  flexdashboard::flex_dashboard:
+    storyboard: true
+    orientation: columns
+    vertical_layout: fill
+    theme: journal
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(plotly)
+library(tidyverse)
+library(spotifyr)
+library(compmus)
+```
+
+------------------------------------------------------------------------
+
+### Welcome
+
+With the information and analyses on this storyboard, I aim to investigate the ongoing reinvention of Paul Simon's colorful variety of music.
+
+Paul Simon grew up in a multicultural environment and has always been eager to explore new music traditions. Throughout his long career, Simon has been inspired by a lot of genres, and has applied bits of multiple traditions on the same album, even on the same songs. I want to investigate how Spotify describes his albums to see how his style has changed over time.
+
+For this, I will investigate the albums he made in his solo career, as well as the ones he made together with Art Garfunkel for Simon & Garfunkel. I've added a list of these on the right side of the page.
+
+I expect that I will find the biggest differences in audio features in the from the second half of his solo career, especially from Graceland on. But because Simon has always been experimenting with different styles, the results of my research could be surprising.
+
+Paul Simon has explained that for several songs, he took used aspects of 5 to 6 genres and musical tradition. The audio labels Spotify will give to his albums will probably not be as detailed as a description of Paul Simon himself.
+
+Identifying several tracks in my corpus as typical or atypical is difficult, because Simon’s discography is so widely diverse (which inspired this corpus :) But, in terms of his image as an American folk(rock) singer, the tracks from his Simon & Garfunkel period will be most typical, and his later solo albums most untypical, as his musical exploration only grew more and more.
+
+------------------------------------------------------------------------
+
+My corpus consists of 19 studio albums:
+
+Simon & Garfunkel
+
+-   Wednesday Morning, 3 A.M. (1964)
+-   Sounds of Silence (1966)
+-   Parsley, Sage, Rosemary and Thyme (1966)
+-   Bookends (1968)
+-   Bridge Over Troubled Water (1970)
+
+Solo career
+
+-   The Paul Simon Songbook (1965)
+-   Paul Simon (1972)
+-   There Goes Rhymin’ Simon (1973)
+-   Still Crazy After All These Years (1975)
+-   One-Trick Pony (1980)
+-   Heart And Bones (1983)
+-   Graceland (1986)
+-   The Rhythm Of The Saints (1990)
+-   Songs From The Capeman (1997)
+-   You’re The One (2000)
+-   Surprise (2006)
+-   So Beautiful or So What (2011)
+-   Stranger To Stranger (2016)
+-   In The Blue Light (2018)
+-   Seven Psalms (2023)
+
+### Homework week 7
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(tidyr)
+library(spotifyr)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+
+playlist_id <- "3c05QD0xQj86tsLjw3dyBx?si=a3d2688c709f4dfc"
+api_token <- "8a2cd487c77f405ebcb3db44defb486a"
+discography <- get_playlist_audio_features("", playlist_id)
+
+# Use %>% to pipe the result of group_by() into summarise()
+summary_df <- discography %>%
+  group_by(track.album.name) %>%
+  summarise(
+    mean_speechiness = mean(speechiness),
+    release_date = first(track.album.release_date)) %>%
+  mutate(mean_speechiness = mean_speechiness*100)
+
+summary_discography <- summary_df %>%
+  pivot_longer(
+    cols = starts_with("mean_"),
+    names_to = "feature",
+    values_to = "mean_speechiness"  )
+
+# Convert release_date to Date format
+summary_discography$release_date <- as.Date(summary_discography$release_date)
+
+# Arrange summary_discography by release_date in ascending order
+summary_discography <- summary_discography %>%
+  arrange(release_date)
+
+# Convert track.album.name to a factor with levels ordered by release_date
+summary_discography$track.album.name <- factor(summary_discography$track.album.name, 
+                                               levels = summary_discography$track.album.name)
+
+
+my_ggplot <- ggplot(data = summary_discography, aes(x = mean_speechiness, y = release_date)) +
+  geom_col(aes(y = track.album.name), color = "coral2", fill = "coral2") +
+  theme_classic() +
+  labs(x = "Mean Speechiness", y = "Album", title = "Mean Speechiness across Paul Simon's albums")
+
+ggplotly(my_ggplot)
+
+```
+
+------------------------------------------------------------------------
+
+Here you can see the mean amount of speechiness per Paul Simon Album. (I am not sure how this will add to my research on his reinvention but I needed a way to practice making plots first :)
+
+Spotify measures speechiness from 0.0 to 1.0 (I've multiplied the results by 10). The mean speechiness of the album Bookends is above 10, which is probably the result of an error that I have to look into. I do know that Bookends has a track called 'Voices of Old People', which only consists of snippets of interviews Art Garfunkel did with the elderly in a retirement home and doesn't contain any music. This could be a reason for the error.
+
+### Homework week 8
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+
+discography_arranged_for_popularity <- discography %>%
+  arrange(desc(track.popularity)) %>%
+  filter(!is.na(track.preview_url)) %>%
+  filter(!grepl("live", track.name, ignore.case = TRUE)) %>%
+  mutate(song_rank = row_number())
+
+library(foreach)
+
+top <- head(discography_arranged_for_popularity, 3)
+bottom <- tail(discography_arranged_for_popularity, 3)
+
+n_rows <- nrow(discography_arranged_for_popularity)
+middle_row <- ceiling(n_rows / 2)
+middle <- discography_arranged_for_popularity[(middle_row - 1):(middle_row + 1), ]
+
+top_middle_bottom_songs <- rbind(top, middle, bottom)
+
+# Bepaal de oorspronkelijke volgorde van de nummers in de tabel
+originele_volgorde <- factor(top_middle_bottom_songs$track.name, levels = unique(top_middle_bottom_songs$track.name))
+
+# Maak de plot met behoud van de oorspronkelijke volgorde van de nummers
+my_ggplot2 <- ggplot(top_middle_bottom_songs, aes(x = track.popularity, y = originele_volgorde)) +
+  geom_col(color = "green4", fill = "green4") +
+  theme_classic() +
+  labs(x = "Popularity", y = "3 Top, middle and bottom songs", title = "Popularity of the 3 top, middle and bottom songs")
+
+plot(my_ggplot2)
+
+
+analyseer_muziek <- function(track) {
+  # Haal de audio-analyse op voor het opgegeven nummer
+  audio_analyse <- get_tidy_audio_analysis(track$track.id)
+  
+  # Selecteer de segmenten en breng ze samen
+  segmenten <- audio_analyse %>%
+    select(segments) %>%
+    unnest(segments)
+  
+  # Normaliseer de pitches
+  genormaliseerde_pitches <- segmenten %>%
+    mutate(pitches = map(pitches, compmus_normalise, "euclidean")) %>%
+    compmus_gather_chroma()
+  
+  # Plot de chroma features
+  plot <- ggplot(
+    genormaliseerde_pitches,
+    aes(
+      x = start + duration / 2,
+      width = duration,
+      y = pitch_class,
+      fill = value
+    )
+  ) +
+    geom_tile() +
+    labs(x = "Tijd (s)", y = NULL, fill = "Magnitude", title = paste("popularity index: ", track$track.popularity, " - ", track$track.name)) +
+    theme_minimal() +
+    scale_fill_viridis_c()
+  
+  ggplotly(plot)
+  print(plot)
+  return(plot)
+}
+
+for (i in 1:nrow(top_middle_bottom_songs)) {
+  plot <- analyseer_muziek(top_middle_bottom_songs[i,])
+}
+
+
+```
+
+
+***
+I want to see if there is any variety in tonality across Paul Simon's most popular, mid popular and least popular songs. For this I will investigate the chroma features (pitches) of the three top songs, three middle songs and three bottom songs in Paul Simon's discography. On the left you can see a graph in which the popularity rate of these nine songs is displayed. It's interesting to see that his 3 least popular songs are all from his album Songs From The Capeman, which he wrote for his musical The Capeman.
+
+I didn't get to the analysis of the chromagrams yet. To be continued...
