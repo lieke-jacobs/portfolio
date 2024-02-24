@@ -74,7 +74,8 @@ library(dplyr)
 library(ggplot2)
 library(plotly)
 
-playlist_id <- "3c05QD0xQj86tsLjw3dyBx?si=a3d2688c709f4dfc"
+playlist_id <- "3c05QD0xQj86tsLjw3dyBx?si=a3d2688c709f4dfc" #Paul Simon
+#playlist_id <- "17AzxLBzKJW9bl7GHDreNk?si=1d79ec49fb6948c8" #Hans Zimmer
 api_token <- "8a2cd487c77f405ebcb3db44defb486a"
 discography <- get_playlist_audio_features("", playlist_id)
 
