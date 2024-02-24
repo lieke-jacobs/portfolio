@@ -127,10 +127,7 @@ Spotify measures speechiness from 0.0 to 1.0 (I've multiplied the results by 10)
 discography_arranged_for_popularity <- discography %>%
   arrange(desc(track.popularity)) %>%
   filter(!is.na(track.preview_url)) %>%
-  filter(!grepl("live", track.name, ignore.case = TRUE)) %>%
-  mutate(song_rank = row_number())
-
-library(foreach)
+  filter(!grepl("live", track.name, ignore.case = TRUE))
 
 top <- head(discography_arranged_for_popularity, 3)
 bottom <- tail(discography_arranged_for_popularity, 3)
@@ -182,13 +179,12 @@ analyseer_muziek <- function(track) {
     theme_minimal() +
     scale_fill_viridis_c()
   
-  ggplotly(plot)
+  #ggplotly(plot)
   print(plot)
-  return(plot)
 }
 
 for (i in 1:nrow(top_middle_bottom_songs)) {
-  plot <- analyseer_muziek(top_middle_bottom_songs[i,])
+  analyseer_muziek(top_middle_bottom_songs[i,])
 }
 
 
