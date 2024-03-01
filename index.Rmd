@@ -9,65 +9,15 @@ output:
     theme: journal
 ---
 
-```{r setup, include=FALSE}
+```{r test, include=FALSE}
 library(flexdashboard)
 library(plotly)
 library(tidyverse)
 library(spotifyr)
 library(compmus)
+library(ggplot2)
 ```
 
-### Homework week 9
-
-```{r breakout, include=FALSE}
-
-# library(tidyverse)
-library(spotifyr)
-library(compmus)
-
-tidy <- get_tidy_audio_analysis("5ZLkc5RY1NM4FtGWEd6HOE")
-comp_align <- tidy |> compmus_align(beats, segments)
-
-
-bzt <-
-  get_tidy_audio_analysis("5ZLkc5RY1NM4FtGWEd6HOE") |> # Change URI.
-  compmus_align(sections, segments) |>                     # Change `bars`
-  select(sections) |>                                      #   in all three
-  unnest(sections) |>                                      #   of these lines.
-  mutate(
-    pitches =
-      map(segments,
-        compmus_summarise, pitches,
-        method = "max", norm = "aitchison"              # Change summary & norm.
-      )
-  ) |>
-  mutate(
-    timbre =
-      map(segments,
-        compmus_summarise, timbre,
-        method = "max", norm = "aitchison"              # Change summary & norm.
-      )
-  )
-
-bzt |>
-  compmus_gather_timbre() |>
-  ggplot(
-    aes(
-      x = start + duration / 2,
-      width = duration,
-      y = basis,
-      fill = value
-    )
-  ) +
-  geom_tile() +
-  labs(x = "Time (s)", y = NULL, fill = "Magnitude") +
-  scale_fill_viridis_c() +                              
-  theme_classic()
-
-
-```
-
-------------------------------------------------------------------------
 
 ### Welcome
 
@@ -82,6 +32,12 @@ I expect that I will find the biggest differences in audio features in the from 
 Paul Simon has explained that for several songs, he took used aspects of 5 to 6 genres and musical tradition. The audio labels Spotify will give to his albums will probably not be as detailed as a description of Paul Simon himself.
 
 Identifying several tracks in my corpus as typical or atypical is difficult, because Simon’s discography is so widely diverse (which inspired this corpus :) But, in terms of his image as an American folk(rock) singer, the tracks from his Simon & Garfunkel period will be most typical, and his later solo albums most untypical, as his musical exploration only grew more and more.
+
+***
+
+<div style="clear:both;"></div>
+
+<img src="https://scontent-ams2-1.xx.fbcdn.net/v/t31.18172-8/12968175_10154106120702264_1105485326390735971_o.jpg?_nc_cat=100&ccb=1-7&_nc_sid=7a1959&_nc_ohc=cPDKPBdUXjYAX99kRJW&_nc_ht=scontent-ams2-1.xx&oh=00_AfD-X0tYTEiuidrYyaezIhXIyXnakNnReWfKtGsLMhU9jA&oe=660966A7" alt="Paul Simon" style="max-width: 100%; height: auto;">
 
 ------------------------------------------------------------------------
 
@@ -113,7 +69,7 @@ Solo career
 -   In The Blue Light (2018)
 -   Seven Psalms (2023)
 
-### Homework week 7
+### Speechiness in Paul Simon's discography
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 
@@ -164,15 +120,24 @@ ggplotly(my_ggplot)
 
 ```
 
-------------------------------------------------------------------------
-
+***
 Here you can see the mean amount of speechiness per Paul Simon Album. (I am not sure how this will add to my research on his reinvention but I needed a way to practice making plots first :)
-
 Spotify measures speechiness from 0.0 to 1.0 (I've multiplied the results by 10). The mean speechiness of the album Bookends is above 10, which is probably the result of an error that I have to look into. I do know that Bookends has a track called 'Voices of Old People', which only consists of snippets of interviews Art Garfunkel did with the elderly in a retirement home and doesn't contain any music. This could be a reason for the error.
 
-### Homework week 8
+-------------------------------------------------------------------------
+### Discography arranged by popularity
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=10}
+
+library(flexdashboard)
+library(plotly)
+library(tidyverse)
+library(spotifyr)
+library(compmus)
+library(ggplot2)
+library(gridExtra)
+
+# maak chromagrammen
 
 discography_arranged_for_popularity <- discography %>%
   arrange(desc(track.popularity)) %>%
@@ -187,6 +152,8 @@ middle_row <- ceiling(n_rows / 2)
 middle <- discography_arranged_for_popularity[(middle_row - 1):(middle_row + 1), ]
 
 top_middle_bottom_songs <- rbind(top, middle, bottom)
+top_middle_bottom_songs <- rev(top_middle_bottom_songs)
+
 
 # Bepaal de oorspronkelijke volgorde van de nummers in de tabel
 originele_volgorde <- factor(top_middle_bottom_songs$track.name, levels = unique(top_middle_bottom_songs$track.name))
@@ -199,6 +166,15 @@ my_ggplot2 <- ggplot(top_middle_bottom_songs, aes(x = track.popularity, y = orig
 
 plot(my_ggplot2)
 
+```
+
+***
+I want to see if there is any variety in tonality across Paul Simon's most popular, mid popular and least popular songs. For this I will investigate the chroma features (pitches) of the three top songs, three middle songs and three bottom songs in Paul Simon's discography. On the left you can see a graph in which the popularity rate of these nine songs is displayed. It's interesting to see that his 3 least popular songs are all from his album Songs From The Capeman, which he wrote for his musical The Capeman.
+
+### Chromagrams and cepstrograms for each song
+``` {r echo=FALSE, message=FALSE, warning=FALSE}
+
+# Maak chromagrammen
 
 analyseer_muziek <- function(track) {
   # Haal de audio-analyse op voor het opgegeven nummer
@@ -215,7 +191,7 @@ analyseer_muziek <- function(track) {
     compmus_gather_chroma()
   
   # Plot de chroma features
-  plot <- ggplot(
+  plot_chroma <- ggplot(
     genormaliseerde_pitches,
     aes(
       x = start + duration / 2,
@@ -230,18 +206,80 @@ analyseer_muziek <- function(track) {
     scale_fill_viridis_c()
   
   #ggplotly(plot)
-  print(plot)
+  print(plot_chroma)
+}
+
+# all_plot_chroma <- for (i in 1:nrow(top_middle_bottom_songs)) {
+#  analyseer_muziek(top_middle_bottom_songs[i,])
+# }
+# Maak cepstrogrammen
+
+library(tidyverse)
+library(spotifyr)
+library(compmus)
+library(ggplot2)
+library(gridExtra)
+
+
+analyseer_muziek_timbre <- function(track) {
+  # Haal de audio-analyse op voor het opgegeven nummer
+#  audio_analyse <- get_tidy_audio_analysis(track$track.id)
+  
+  # Selecteer de segmenten en breng ze samen
+#  segmenten <- audio_analyse %>%
+analyseer_muziek_timbre<-
+ get_tidy_audio_analysis(track$track.id) |> # Change URI.
+  compmus_align(bars, segments) |>                     # Change `bars`
+  select(bars) |>                                      #   in all three
+  unnest(bars) |>                                      #   of these lines.
+  mutate(
+    pitches =
+      map(segments,
+        compmus_summarise, pitches,
+        method = "rms", norm = "euclidean"              # Change summary & norm.
+      )
+  ) |>
+  mutate(
+    timbre =
+      map(segments,
+        compmus_summarise, timbre,
+        method = "rms", norm = "euclidean"              # Change summary & norm.
+      )
+  )
+
+# Check if there's any issue with the data transformation
+paul_simon_timbre <- analyseer_muziek_timbre |> compmus_gather_timbre()
+
+# Check if there's any issue with the ggplot aesthetics
+plot_timbre <- ggplot(
+  data = paul_simon_timbre,
+  aes(
+    x = start + duration / 2,
+    width = duration,
+    y = basis,
+    fill = value
+  )
+) +
+geom_tile() +
+labs(x = "Tijd (s)", y = NULL, fill = "Magnitude", title = paste("popularity index: ", track$track.popularity, " - ", track$track.name)) +
+scale_fill_viridis_c() +                              
+theme_classic()
+
+print(plot_timbre)
 }
 
 for (i in 1:nrow(top_middle_bottom_songs)) {
   analyseer_muziek(top_middle_bottom_songs[i,])
+  analyseer_muziek_timbre(top_middle_bottom_songs[i,])
+  paste(" ")
 }
-
 
 ```
 
-
 ***
-I want to see if there is any variety in tonality across Paul Simon's most popular, mid popular and least popular songs. For this I will investigate the chroma features (pitches) of the three top songs, three middle songs and three bottom songs in Paul Simon's discography. On the left you can see a graph in which the popularity rate of these nine songs is displayed. It's interesting to see that his 3 least popular songs are all from his album Songs From The Capeman, which he wrote for his musical The Capeman.
+On this page the chromagrams as well as the cepstrograms for all nine top, middle and bottom songs are displayed.
 
-I didn't get to the analysis of the chromagrams yet. To be continued...
+We can see that for the three most popular songs of Paul Simon, the tonality is quite clear (Mrs.Robison is in F#, You Can Call Me Al in C and The Sound of Silence in F#). It's interesting to see that for the middle and bottom songs, the tonality is much less clear.
+
+For most of the songs of the list the timbre consists of multiple levels, only The Big Bright Green Pleasure Machine and Night Game have fewer levels (mostly co2). So, according to these plots, Paul Simon often likes to use a lot of elements that result in a wide range of timbre. I think this is also hearable in the recordings, in which he stacks a lot of instruments, rhythms and sound snippets on top of each other, creating multiple levels of sound.
+
