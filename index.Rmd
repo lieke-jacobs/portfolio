@@ -20,7 +20,6 @@ library(ggplot2)
 
 
 ### Welcome
-
 With the information and analyses on this storyboard, I aim to investigate the ongoing reinvention of Paul Simon's colorful variety of music.
 
 Paul Simon grew up in a multicultural environment and has always been eager to explore new music traditions. Throughout his long career, Simon has been inspired by a lot of genres, and has applied bits of multiple traditions on the same album, even on the same songs. I want to investigate how Spotify describes his albums to see how his style has changed over time.
@@ -34,7 +33,6 @@ Paul Simon has explained that for several songs, he took used aspects of 5 to 6 
 Identifying several tracks in my corpus as typical or atypical is difficult, because Simon’s discography is so widely diverse (which inspired this corpus :) But, in terms of his image as an American folk(rock) singer, the tracks from his Simon & Garfunkel period will be most typical, and his later solo albums most untypical, as his musical exploration only grew more and more.
 
 ***
-
 <div style="clear:both;"></div>
 
 <img src="https://scontent-ams2-1.xx.fbcdn.net/v/t31.18172-8/12968175_10154106120702264_1105485326390735971_o.jpg?_nc_cat=100&ccb=1-7&_nc_sid=7a1959&_nc_ohc=cPDKPBdUXjYAX99kRJW&_nc_ht=scontent-ams2-1.xx&oh=00_AfD-X0tYTEiuidrYyaezIhXIyXnakNnReWfKtGsLMhU9jA&oe=660966A7" alt="Paul Simon" style="max-width: 100%; height: auto;">
