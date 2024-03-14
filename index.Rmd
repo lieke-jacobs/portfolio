@@ -21,6 +21,117 @@ library(tidyr)
 library(gridExtra)
 ```
 
+### Tempo across Paul Simon's albums
+
+``` {r echo=FALSE, message=FALSE, warning=FALSE}
+
+playlist_id <- "3c05QD0xQj86tsLjw3dyBx?si=a3d2688c709f4dfc" #Paul Simon
+#playlist_id <- "17AzxLBzKJW9bl7GHDreNk?si=1d79ec49fb6948c8" #Hans Zimmer
+api_token <- "8a2cd487c77f405ebcb3db44defb486a"
+discography <- get_playlist_audio_features("", playlist_id)
+
+library(ggplot2)
+library(plotly)
+
+summary_discography_album <- discography %>%
+  group_by(track.album.name) %>%
+  summarise(tempo, track.name, track.album.release_date) %>%
+  arrange(desc(track.album.release_date)) %>%
+  mutate(track.album.name = factor(track.album.name, levels = unique(track.album.name)))
+
+# Convert release_date to Date format
+summary_discography_album$release_date <- as.Date(summary_discography_album$track.album.release_date)
+
+ggplot_tempo <- ggplot(data = summary_discography_album, aes(x = reorder(track.album.name, release_date), y = tempo, text = track.name)) +
+  geom_boxplot() +
+  geom_point(data = summary_discography_album %>% filter(tempo %in% boxplot.stats(summary_discography_album$tempo)$out),
+             aes(color = "Outlier"), size = 1.5, show.legend = FALSE) +  # Plot outliers as points
+  labs(x = "Album", y = "Tempo", title = "Tempo across Paul Simon's albums") +
+  theme(axis.text.x = element_text(angle = 70, vjust = 1, hjust = 1)) +
+  scale_color_manual(values = c("Outlier" = "coral2"))  # Customize outlier color
+
+ggplotly(ggplot_tempo, tooltip = "text")
+
+
+```
+
+***
+
+According to this boxplot, the tempi of Paul Simon's songs differ a lot, but it could be said that most of his songs' tempi are between 100bpm and 130bmp. You can hover over over the biggest outliers to see which songs' tempi are extrodinary according to Spotify. It's interesting to see that Spotify perceives He Was My Brother of the Wednesday Morning 3 A.M. album as an outlier of 200bpm (which is probably not right) but Paul Simon's solo version of The Paul Simon Songbook not. Blessed is also an outlier of around 200bmp, I don't think this is very correct either. On top of that, even though Still Crazy After All These Years is a slower song, it is probably not 37.1bpm. On the next page I will have a look at the tempogram of this song to see if there is anything interesting in it that may confuse Spotify.
+
+Besides the Seven Psalms album, which is essentially one long track, the Graceland album and The Rhythm Of The Saints have a collection of songs that cover the smallest range of tempi. It is known that for these albums Paul Simon explored rhythms (and harmonies), from South African cultures (Graceland) and West African and South American cultures (Rhythm of the Saints). It is interesting to see that in this elaborate musical exploration, that was mainly focused on rhythm, he stayed within a small range of tempi. 
+
+### Tempogram Still Crazy After All These Years
+
+``` {r echo=FALSE, message=FALSE, warning=FALSE}
+
+still_crazy <- get_tidy_audio_analysis("3gIBSlXYIN1mru35l4LWPB?si=323c0e8b70b64731")
+
+still_crazy |>
+  tempogram(window_size = 4, hop_size = 0.5, cyclic = TRUE) |>
+  ggplot(aes(x = time, y = bpm, fill = power)) +
+  geom_raster() +
+  scale_fill_viridis_c(guide = "none") +
+  labs(x = "Time (s)", y = "Tempo (BPM)", title = "Still Crazy After All These Years") +
+  theme_classic()
+
+
+```
+
+***
+
+Even though the lines in this tempogram aren't very clear, it could be said that the clearest tempo is around 110bpm. When listening and tapping along myself, I predict it is probably around 60bpm.
+
+### Tempograms He Was My Brother
+
+``` {r echo=FALSE, message=FALSE, warning=FALSE}
+he_was_my_brother <- get_tidy_audio_analysis("5K1aYLWFU4FZlqldlYX8Yg?si=d56b1ba144f2408f")
+
+he_was_my_brother |>
+  tempogram(window_size = 2, hop_size = 0.5, cyclic = TRUE) |>
+  ggplot(aes(x = time, y = bpm, fill = power)) +
+  geom_raster() +
+  scale_fill_viridis_c(guide = "none") +
+  labs(x = "Time (s)", y = "Tempo (BPM)", title = "He Was My Brother - Wednesday Morning 3 A.M.") +
+  theme_classic()
+
+he_was_my_brother_pssb <- get_tidy_audio_analysis("3SqYkfrdqy0JHZFHSqrTGJ?si=ffcb7d7984fa43ff")
+
+he_was_my_brother_pssb |>
+  tempogram(window_size = 2, hop_size = 0.5, cyclic = TRUE) |>
+  ggplot(aes(x = time, y = bpm, fill = power)) +
+  geom_raster() +
+  scale_fill_viridis_c(guide = "none") +
+  labs(x = "Time (s)", y = "Tempo (BPM)", title = "He Was My Brother - The Paul Simon Songbook") +
+  theme_classic()
+
+
+```
+
+***
+
+If we squint our eyes we can see a vague (almost similar) line in the tempograms for the two versions of He Was My Brother. The tempo the line shows is more likely than the 200bpm outlier on the previous tap. The line starts somewhere around 90bpm and travels up towards 110bpm. Because the song was probably played in life, it's not strange that the tempo had gone up a little towards the end of the song. 
+
+### Tempogram Seven Psalms
+
+``` {r echo=FALSE, message=FALSE, warning=FALSE}
+seven_psalms <- get_tidy_audio_analysis("3Y7ZWE3zat6O9YhMm44qCf?si=d262640e22f94420")
+
+red_lines <- c(364, 549, 852, 1209, 1339, 1588, 1749)
+
+seven_psalms |>
+  tempogram(window_size = 4, hop_size = 1, cyclic = TRUE) |>
+  ggplot(aes(x = time, y = bpm, fill = power)) +
+  geom_raster() +
+  geom_vline(xintercept = red_lines, color = "coral2", linewidth = 2) +  
+  scale_fill_viridis_c(guide = "none") +
+  labs(x = "Time (s)", y = "Tempo (BPM)", title = "Seven Psalms") +
+  theme_classic()
+```
+
+***
+Just like the other tempograms, this plot for the album Seven Psalms is quite hard to read. It also took a long time to plot, not only because it is a tempogram, but also because the song (which is actually an album consisting of one track) is 33 minutes long. You can see in the plot that there are a few blue vertical lines. Here, a new psalm begins, and the tempo slightly changes.
+
 ### Homework week 10
 
 ``` {r echo=FALSE, message=FALSE, warning=FALSE}
@@ -531,7 +642,7 @@ originele_volgorde <- factor(top_middle_bottom_songs$track.name, levels = unique
 
 # Maak de plot met behoud van de oorspronkelijke volgorde van de nummers
 my_ggplot2 <- ggplot(top_middle_bottom_songs, aes(x = track.popularity, y = originele_volgorde)) +
-  geom_col(color = "green4", fill = "green4") +
+  geom_col(color = "coral2", fill = "coral2") +
   theme_classic() +
   labs(x = "Popularity", y = "3 Top, middle and bottom songs", title = "Popularity of the 3 top, middle and bottom songs")
 
