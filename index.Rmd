@@ -5,9 +5,17 @@ output:
   flexdashboard::flex_dashboard:
     storyboard: true
     orientation: columns
+    self_contained: false
     vertical_layout: fill
     theme: journal
 ---
+
+```{r, echo = FALSE}
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+---
+
 
 ```{r test, include=FALSE}
 library(flexdashboard)
@@ -19,8 +27,562 @@ library(ggplot2)
 library(dplyr)
 library(tidyr)
 library(gridExtra)
+knitr::opts_chunk$set(cache = TRUE, cache.lazy = FALSE)
 ```
 
+Dendrogram of three albums
+=============================================
+
+Dendrogram of three albums {data-width=600}
+-------------------------------------
+
+### Dendrogram of three albums
+
+
+```{undefined echo=FALSE}
+
+library(tidyverse)
+library(tidymodels)
+library(ggdendro)
+library(heatmaply)
+library(spotifyr)
+library(compmus)
+
+get_conf_mat <- function(fit) {
+  outcome <- .get_tune_outcome_names(fit)
+  fit |> 
+    collect_predictions() |> 
+    conf_mat(truth = outcome, estimate = .pred_class)
+}  
+
+get_pr <- function(fit) {
+  fit |> 
+    conf_mat_resampled() |> 
+    group_by(Prediction) |> mutate(precision = Freq / sum(Freq)) |> 
+    group_by(Truth) |> mutate(recall = Freq / sum(Freq)) |> 
+    ungroup() |> filter(Prediction == Truth) |> 
+    select(class = Prediction, precision, recall)
+}  
+
+rhythm_saints <- get_playlist_audio_features("spotify", "0ThkWjioGYlNBCfmUytGgF?si=5955ebc6059b448f") 
+parsley_sage_rosemary_thyme <- get_playlist_audio_features("spotify", "7wq0p4uiHpzs8W3jNhRxHe?si=2ce370b41e014c90")
+so_beautiful_so_what <- get_playlist_audio_features("spotify", "1xcvLzwOZLIRiXN0BS10pM?si=8977801b81ac469a") 
+
+three_albums <-
+  bind_rows(
+    rhythm_saints |> mutate(playlist = "Rhythm of the Saints"),
+    parsley_sage_rosemary_thyme |> mutate(playlist = "Parsley, Sage, Rosemary & Thyme"),
+    so_beautiful_so_what |> mutate(playlist = "So Beautiful or So What") 
+  ) |> 
+  add_audio_analysis()
+
+# Note that you are not allowed to have duplicate songs in the dataset! 
+three_albums |>
+  count(track.name) %>%
+  arrange(desc(n))
+
+# Grab only track names where it's listed more than once
+tracks_to_remove <- three_albums |>
+  count(track.name) |>
+  filter(n >= 2) %>%
+  select(track.name)
+
+three_albums <- three_albums %>%
+  anti_join(tracks_to_remove)
+
+# Similar to code from class, still trying to predict track.name but later we add on playlist name!
+three_albums_juice <-
+  recipe(
+    track.name ~
+      danceability +
+      energy +
+      loudness +
+      speechiness +
+      acousticness +
+      instrumentalness +
+      liveness +
+      valence +
+      tempo,
+    data = three_albums
+  ) |>
+  step_center(all_predictors()) |>
+  step_scale(all_predictors()) |> 
+  # step_range(all_predictors()) |> 
+  prep(three_albums |> mutate(track.name = str_trunc(track.name, 20))) |>
+  juice() |>
+ column_to_rownames("track.name")
+
+three_albums_dist <- dist(three_albums_juice, method = "euclidean")
+
+data_for_three_albums_clustering <- three_albums_dist |> 
+  hclust(method = "average") |> # average for a balanced tree!
+  dendro_data() 
+
+playlist_data_for_join <- three_albums %>%
+  select(track.name, playlist_name) %>%
+  mutate(label = str_trunc(track.name, 20))
+
+data_for_three_albums_clustering$labels <- data_for_three_albums_clustering$labels %>%
+  left_join(playlist_data_for_join)
+
+# Add factor so can use colouring! 
+data_for_three_albums_clustering$labels$label <- factor(data_for_three_albums_clustering$labels$label)
+
+data_for_three_albums_clustering |>
+  ggdendrogram() +
+  geom_text(data = label(data_for_three_albums_clustering), aes(x, y, 
+                                   label=label, 
+                                   hjust=0,
+                                   vjust=0.5,
+                                   colour=playlist_name), size=1.8) +
+    geom_segment(aes(x = x, y = y, xend = xend, yend = yend), 
+               size = 0.7, color = "grey", data = data_for_three_albums_clustering$segments,
+               height = 0.5) +
+  coord_flip() + 
+  scale_y_reverse(expand=c(0.2, 0)) +
+  theme(axis.line.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.title.y=element_blank(),
+        panel.background=element_rect(fill="white"),
+        panel.grid=element_blank(),
+        legend.position = "right") +
+  labs(title = "Clustering of 3 random albums") +
+  guides(
+    colour = guide_legend(
+      title = "Albums",
+      keywidth = 0.5,  # Adjust the size of legend items
+      keyheight = 0.7
+      
+    )
+) +
+  theme(plot.margin = margin(0, 5, 0, 0))  
+```
+
+Analysis {data-width=400}
+-------------------------------------
+***
+
+For this next analysis, I want to compare the features of Paul Simon songs from different albums using a dendrogram. Because a dendrogram will get too elaborate and messy when I compare all Paul Simon albums, I've split his discography into three different periods; his early work and his time with Simon & Garfunkel (1964-1970), his peak solo career (1972-1990) and his later work (1983-2023). From each period, I've randomly chosen an album to compare in a dendrogram: Parsley, Sage, Rosemary and Thyme (1966), The Rhythm of the Saints (1990) and So Beautiful or So What (2011).
+
+The dendrogram is been constructed from similarities found on danceability, energy, loudness, speechiness, acousticness, instrumentalness, liveness, valence and tempo features, and is using an "average" clustering method.
+
+Most clusters are made of a few songs of the same album. The biggest similarities can be found in the Parsley, Sage, Rosemary and Thyme album. The first (biggest) similarity between two songs from from two different albums is the one between The Cool, Cool River (Rhythm of the Saints) and A Poem On The Underground Wall (Parsley, Sage Rosemary and Thyme).
+
+Unfortunately the dendrogram cannot show us on what features caused the similarity of The Cool, Cool River and A Poem For The Underground Wall. Listening to the songs, I think similarities can be found in the ongoing 'running' of the rhythm, which doesn't seem to stop and has a vivacious effect. But to see on which features these clusters are based exactly, I've made a heatmap on the next tab.
+
+Heatmap of three albums
+===============================================
+
+Heatmap of three albums {data-width=600}
+-----------------------------------------------
+### Heatmap of three albums
+
+``` {r echo=false}
+
+library(tidyverse)
+library(tidymodels)
+library(ggdendro)
+library(heatmaply)
+library(spotifyr)
+library(compmus)
+
+get_conf_mat <- function(fit) {
+  outcome <- .get_tune_outcome_names(fit)
+  fit |> 
+    collect_predictions() |> 
+    conf_mat(truth = outcome, estimate = .pred_class)
+}  
+
+get_pr <- function(fit) {
+  fit |> 
+    conf_mat_resampled() |> 
+    group_by(Prediction) |> mutate(precision = Freq / sum(Freq)) |> 
+    group_by(Truth) |> mutate(recall = Freq / sum(Freq)) |> 
+    ungroup() |> filter(Prediction == Truth) |> 
+    select(class = Prediction, precision, recall)
+}  
+
+rhythm_saints <- get_playlist_audio_features("spotify", "0ThkWjioGYlNBCfmUytGgF?si=5955ebc6059b448f") 
+parsley_sage_rosemary_thyme <- get_playlist_audio_features("spotify", "7wq0p4uiHpzs8W3jNhRxHe?si=2ce370b41e014c90")
+so_beautiful_so_what <- get_playlist_audio_features("spotify", "1xcvLzwOZLIRiXN0BS10pM?si=8977801b81ac469a") 
+
+three_albums <-
+  bind_rows(
+    rhythm_saints |> mutate(playlist = "Rhythm of the Saints"),
+    parsley_sage_rosemary_thyme |> mutate(playlist = "Parsley, Sage, Rosemary & Thyme"),
+    so_beautiful_so_what |> mutate(playlist = "So Beautiful or So What") 
+  ) |> 
+  add_audio_analysis()
+
+# Note that you are not allowed to have duplicate songs in the dataset! 
+three_albums |>
+  count(track.name) %>%
+  arrange(desc(n))
+
+# Grab only track names where it's listed more than once
+tracks_to_remove <- three_albums |>
+  count(track.name) |>
+  filter(n >= 2) %>%
+  select(track.name)
+
+three_albums <- three_albums %>%
+  anti_join(tracks_to_remove)
+
+# Similar to code from class, still trying to predict track.name but later we add on playlist name!
+three_albums_juice <-
+  recipe(
+    track.name ~
+       danceability +
+      energy +
+      loudness +
+      speechiness +
+      acousticness +
+      instrumentalness +
+      liveness +
+      valence +
+      tempo,
+    data = three_albums
+  ) |>
+  step_center(all_predictors()) |>
+  step_scale(all_predictors()) |> 
+  # step_range(all_predictors()) |> 
+  prep(three_albums |> mutate(track.name = str_trunc(track.name, 20))) |>
+  juice() |>
+ column_to_rownames("track.name")
+
+three_albums_dist <- dist(three_albums_juice, method = "euclidean")
+
+# Create a vector of colors corresponding to each album
+album_colors <- c("Rhythm of the Saints" = "blue",
+                  "Parsley, Sage, Rosemary & Thyme" = "green",
+                  "So Beautiful or So What" = "red")
+
+# Map each track name to its corresponding album color
+track_colors <- album_colors[data_for_three_albums_clustering$labels$playlist_name]
+
+# Create HTML markup for track names with color based on album
+track_names_html <- sapply(seq_along(three_albums_juice), function(i) {
+  paste0("<span style='color:", track_colors[i], "'>", rownames(three_albums_juice)[i], "</span>")
+})
+
+heatmaply(
+  three_albums_juice,
+  hclustfun = hclust,
+  hclust_method = "average",  # Change for single, average, or complete linkage.
+  dist_method = "euclidean",
+  fontsize_row = 8,  # Adjust the font size for rows
+  fontsize_col = 8,  # Adjust the font size for columns
+  labels_col = track_names_html  # Assign colors to track names
+)
+
+
+```
+
+Welcome
+===============================================
+
+Welcome {data-width=600}
+-----------------------------------------------
+### Welcome
+
+With the information and analyses on this storyboard, I aim to investigate the ongoing reinvention of Paul Simon's colorful variety of music.
+
+Paul Simon grew up in a multicultural environment and has always been eager to explore new music traditions. Throughout his long career, Simon has been inspired by a lot of genres, and has applied bits of multiple traditions on the same album, even on the same songs. I want to investigate how Spotify describes his albums to see how his style has changed over time.
+
+For this, I will investigate the albums he made in his solo career, as well as the ones he made together with Art Garfunkel for Simon & Garfunkel. I've added a list of these on the right side of the page.
+
+I expect that I will find the biggest differences in audio features in the from the second half of his solo career, especially from Graceland on. But because Simon has always been experimenting with different styles, the results of my research could be surprising.
+
+Paul Simon has explained that for several songs, he took used aspects of 5 to 6 genres and musical tradition. The audio labels Spotify will give to his albums will probably not be as detailed as a description of Paul Simon himself.
+
+Identifying several tracks in my corpus as typical or atypical is difficult, because Simon’s discography is so widely diverse (which inspired this corpus :) But, in terms of his image as an American folk(rock) singer, the tracks from his Simon & Garfunkel period will be most typical, and his later solo albums most untypical, as his musical exploration only grew more and more.
+
+Picture {data-width=400}
+------------------------------------------------------------------
+***
+<div style="clear:both;"></div>
+
+<img src="https://scontent-ams2-1.xx.fbcdn.net/v/t31.18172-8/12968175_10154106120702264_1105485326390735971_o.jpg?_nc_cat=100&ccb=1-7&_nc_sid=7a1959&_nc_ohc=cPDKPBdUXjYAX99kRJW&_nc_ht=scontent-ams2-1.xx&oh=00_AfD-X0tYTEiuidrYyaezIhXIyXnakNnReWfKtGsLMhU9jA&oe=660966A7" alt="Paul Simon" style="max-width: 100%; height: auto;">
+
+------------------------------------------------------------------------
+
+My corpus consists of 19 studio albums:
+
+Simon & Garfunkel
+
+-   Wednesday Morning, 3 A.M. (1964)
+-   Sounds of Silence (1966)
+-   Parsley, Sage, Rosemary and Thyme (1966)
+-   Bookends (1968)
+-   Bridge Over Troubled Water (1970)
+
+Solo career
+
+-   The Paul Simon Songbook (1965)
+-   Paul Simon (1972)
+-   There Goes Rhymin’ Simon (1973)
+-   Still Crazy After All These Years (1975)
+-   One-Trick Pony (1980)
+-   Heart And Bones (1983)
+-   Graceland (1986)
+-   The Rhythm Of The Saints (1990)
+-   Songs From The Capeman (1997)
+-   You’re The One (2000)
+-   Surprise (2006)
+-   So Beautiful or So What (2011)
+-   Stranger To Stranger (2016)
+-   In The Blue Light (2018)
+-   Seven Psalms (2023)
+
+Speechiness in Paul Simon's discography
+========================================
+
+Speechiness in Paul Simon's discography {data-width=600}
+---------------------------------------
+
+### Speechiness in Paul Simon's discography
+
+``` {r echo=FALSE, message=FALSE, warning=FALSE}
+
+library(tidyverse)
+library(tidyr)
+library(spotifyr)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+
+playlist_id <- "3c05QD0xQj86tsLjw3dyBx?si=a3d2688c709f4dfc" #Paul Simon
+#playlist_id <- "17AzxLBzKJW9bl7GHDreNk?si=1d79ec49fb6948c8" #Hans Zimmer
+api_token <- "8a2cd487c77f405ebcb3db44defb486a"
+discography <- get_playlist_audio_features("", playlist_id)
+
+# Use %>% to pipe the result of group_by() into summarise()
+summary_df <- discography %>%
+  group_by(track.album.name) %>%
+  summarise(
+    mean_speechiness = mean(speechiness),
+    release_date = first(track.album.release_date)) %>%
+  mutate(mean_speechiness = mean_speechiness*100)
+
+summary_discography <- summary_df %>%
+  pivot_longer(
+    cols = starts_with("mean_"),
+    names_to = "feature",
+    values_to = "mean_speechiness"  )
+
+# Convert release_date to Date format
+summary_discography$release_date <- as.Date(summary_discography$release_date)
+
+# Arrange summary_discography by release_date in ascending order
+summary_discography <- summary_discography %>%
+  arrange(release_date)
+
+# Convert track.album.name to a factor with levels ordered by release_date
+summary_discography$track.album.name <- factor(summary_discography$track.album.name, 
+                                               levels = summary_discography$track.album.name)
+
+
+my_ggplot <- ggplot(data = summary_discography, aes(x = mean_speechiness, y = release_date)) +
+  geom_col(aes(y = track.album.name), color = "coral2", fill = "coral2") +
+  theme_classic() +
+  labs(x = "Mean Speechiness", y = "Album", title = "Mean Speechiness across Paul Simon's albums")
+
+ggplotly(my_ggplot)
+
+```
+
+Analysis {data-width=400}
+-------------------------------------------------------------------
+***
+Here you can see the mean amount of speechiness per Paul Simon Album. (I am not sure how this will add to my research on his reinvention but I needed a way to practice making plots first :)
+Spotify measures speechiness from 0.0 to 1.0 (I've multiplied the results by 10). The mean speechiness of the album Bookends is above 10, which is probably the result of an error that I have to look into. I do know that Bookends has a track called 'Voices of Old People', which only consists of snippets of interviews Art Garfunkel did with the elderly in a retirement home and doesn't contain any music. This could be a reason for the error.
+
+Discography arranged by popularity
+==================================
+
+Discography arranged by popularity {data-width=600}
+-------------------------------------------------------------------------
+
+### Discography arranged by popularity
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=10}
+
+library(flexdashboard)
+library(plotly)
+library(tidyverse)
+library(spotifyr)
+library(compmus)
+library(ggplot2)
+library(gridExtra)
+library(dplyr)
+
+
+playlist_id <- "3c05QD0xQj86tsLjw3dyBx?si=a3d2688c709f4dfc" #Paul Simon
+#playlist_id <- "17AzxLBzKJW9bl7GHDreNk?si=1d79ec49fb6948c8" #Hans Zimmer
+api_token <- "8a2cd487c77f405ebcb3db44defb486a"
+discography <- get_playlist_audio_features("", playlist_id)
+
+# maak chromagrammen
+
+discography_arranged_for_popularity <- discography %>%
+  arrange(desc(track.popularity)) %>%
+  filter(!is.na(track.preview_url)) %>%
+  filter(!grepl("live", track.name, ignore.case = TRUE))
+
+top <- head(discography_arranged_for_popularity, 3)
+bottom <- tail(discography_arranged_for_popularity, 3)
+
+n_rows <- nrow(discography_arranged_for_popularity)
+middle_row <- ceiling(n_rows / 2)
+middle <- discography_arranged_for_popularity[(middle_row - 1):(middle_row + 1), ]
+
+top_middle_bottom_songs <- rbind(top, middle, bottom)
+top_middle_bottom_songs <- rev(top_middle_bottom_songs)
+
+
+# Bepaal de oorspronkelijke volgorde van de nummers in de tabel
+originele_volgorde <- factor(top_middle_bottom_songs$track.name, levels = unique(top_middle_bottom_songs$track.name))
+
+# Maak de plot met behoud van de oorspronkelijke volgorde van de nummers
+my_ggplot2 <- ggplot(top_middle_bottom_songs, aes(x = track.popularity, y = originele_volgorde)) +
+  geom_col(color = "coral2", fill = "coral2") +
+  theme_classic() +
+  labs(x = "Popularity", y = "3 Top, middle and bottom songs", title = "Popularity of the 3 top, middle and bottom songs")
+
+plot(my_ggplot2)
+
+```
+
+Analysis {data-width=400}
+----------------------------------------------------------------------
+***
+I want to see if there is any variety in tonality across Paul Simon's most popular, mid popular and least popular songs. For this I will investigate the chroma features (pitches) of the three top songs, three middle songs and three bottom songs in Paul Simon's discography. On the left you can see a graph in which the popularity rate of these nine songs is displayed. It's interesting to see that his 3 least popular songs are all from his album Songs From The Capeman, which he wrote for his musical The Capeman.
+
+Chromagrams and cepstrograms for each song
+========================================================
+
+Chromagrams and cepstrograms for each song {data-width=600}
+---------------------------------------------
+### Chromagrams and cepstrograms for each song
+``` {r echo=FALSE, message=FALSE, warning=FALSE}
+
+# Maak chromagrammen
+
+analyseer_muziek <- function(track) {
+  # Haal de audio-analyse op voor het opgegeven nummer
+  audio_analyse <- get_tidy_audio_analysis(track$track.id)
+  
+  # Selecteer de segmenten en breng ze samen
+  segmenten <- audio_analyse %>%
+    select(segments) %>%
+    unnest(segments)
+  
+  # Normaliseer de pitches
+  genormaliseerde_pitches <- segmenten %>%
+    mutate(pitches = map(pitches, compmus_normalise, "euclidean")) %>%
+    compmus_gather_chroma()
+  
+  # Plot de chroma features
+  plot_chroma <- ggplot(
+    genormaliseerde_pitches,
+    aes(
+      x = start + duration / 2,
+      width = duration,
+      y = pitch_class,
+      fill = value
+    )
+  ) +
+    geom_tile() +
+    labs(x = "Tijd (s)", y = NULL, fill = "Magnitude", title = paste("popularity index: ", track$track.popularity, " - ", track$track.name)) +
+    theme_minimal() +
+    scale_fill_viridis_c()
+  
+  #ggplotly(plot)
+  print(plot_chroma)
+}
+
+# all_plot_chroma <- for (i in 1:nrow(top_middle_bottom_songs)) {
+#  analyseer_muziek(top_middle_bottom_songs[i,])
+# }
+# Maak cepstrogrammen
+
+library(tidyverse)
+library(spotifyr)
+library(compmus)
+library(ggplot2)
+library(gridExtra)
+
+
+analyseer_muziek_timbre <- function(track) {
+  # Haal de audio-analyse op voor het opgegeven nummer
+#  audio_analyse <- get_tidy_audio_analysis(track$track.id)
+  
+  # Selecteer de segmenten en breng ze samen
+#  segmenten <- audio_analyse %>%
+analyseer_muziek_timbre<-
+ get_tidy_audio_analysis(track$track.id) |> # Change URI.
+  compmus_align(bars, segments) |>                     # Change `bars`
+  select(bars) |>                                      #   in all three
+  unnest(bars) |>                                      #   of these lines.
+  mutate(
+    pitches =
+      map(segments,
+        compmus_summarise, pitches,
+        method = "rms", norm = "euclidean"              # Change summary & norm.
+      )
+  ) |>
+  mutate(
+    timbre =
+      map(segments,
+        compmus_summarise, timbre,
+        method = "rms", norm = "euclidean"              # Change summary & norm.
+      )
+  )
+
+# Check if there's any issue with the data transformation
+paul_simon_timbre <- analyseer_muziek_timbre |> compmus_gather_timbre()
+
+# Check if there's any issue with the ggplot aesthetics
+plot_timbre <- ggplot(
+  data = paul_simon_timbre,
+  aes(
+    x = start + duration / 2,
+    width = duration,
+    y = basis,
+    fill = value
+  )
+) +
+geom_tile() +
+labs(x = "Tijd (s)", y = NULL, fill = "Magnitude", title = paste("popularity index: ", track$track.popularity, " - ", track$track.name)) +
+scale_fill_viridis_c() +                              
+theme_classic()
+
+print(plot_timbre)
+}
+
+for (i in 1:nrow(top_middle_bottom_songs)) {
+  analyseer_muziek(top_middle_bottom_songs[i,])
+  analyseer_muziek_timbre(top_middle_bottom_songs[i,])
+  paste(" ")
+}
+
+```
+
+Analysis {data-width=400}
+-------------------------------------------------------------------
+***
+On this page the chromagrams as well as the cepstrograms for all nine top, middle and bottom songs are displayed.
+
+We can see that for the three most popular songs of Paul Simon, the tonality is quite clear (Mrs.Robison is in F#, You Can Call Me Al in C and The Sound of Silence in F#). It's interesting to see that for the middle and bottom songs, the tonality is much less clear.
+
+For most of the songs of the list the timbre consists of multiple levels, only The Big Bright Green Pleasure Machine and Night Game have fewer levels (mostly co2). So, according to these plots, Paul Simon often likes to use a lot of elements that result in a wide range of timbre. I think this is also hearable in the recordings, in which he stacks a lot of instruments, rhythms and sound snippets on top of each other, creating multiple levels of sound.
+
+Tempo across Paul Simon's albums
+=============================================
+
+Tempo across Paul Simon's albums {data-width=600}
+--------------------------------------------
 ### Tempo across Paul Simon's albums
 
 ``` {r echo=FALSE, message=FALSE, warning=FALSE}
@@ -56,84 +618,116 @@ ggplotly(ggplot_tempo, tooltip = "text")
 
 ```
 
+Analysis {data-width=400}
+-------------------------------------------
 ***
 
 According to this boxplot, the tempi of Paul Simon's songs differ a lot, but it could be said that most of his songs' tempi are between 100bpm and 130bmp. You can hover over over the biggest outliers to see which songs' tempi are extrodinary according to Spotify. It's interesting to see that Spotify perceives He Was My Brother of the Wednesday Morning 3 A.M. album as an outlier of 200bpm (which is probably not right) but Paul Simon's solo version of The Paul Simon Songbook not. Blessed is also an outlier of around 200bmp, I don't think this is very correct either. On top of that, even though Still Crazy After All These Years is a slower song, it is probably not 37.1bpm. On the next page I will have a look at the tempogram of this song to see if there is anything interesting in it that may confuse Spotify.
 
 Besides the Seven Psalms album, which is essentially one long track, the Graceland album and The Rhythm Of The Saints have a collection of songs that cover the smallest range of tempi. It is known that for these albums Paul Simon explored rhythms (and harmonies), from South African cultures (Graceland) and West African and South American cultures (Rhythm of the Saints). It is interesting to see that in this elaborate musical exploration, that was mainly focused on rhythm, he stayed within a small range of tempi. 
 
+Tempogram Still Crazy After All These Years
+=============================================
+
+Tempogram Still Crazy After All These Years {data-width=600}
+--------------------------------------------
+
 ### Tempogram Still Crazy After All These Years
 
 ``` {r echo=FALSE, message=FALSE, warning=FALSE}
 
-still_crazy <- get_tidy_audio_analysis("3gIBSlXYIN1mru35l4LWPB?si=323c0e8b70b64731")
+#still_crazy <- get_tidy_audio_analysis("3gIBSlXYIN1mru35l4LWPB?si=323c0e8b70b64731")
 
-still_crazy |>
-  tempogram(window_size = 4, hop_size = 0.5, cyclic = TRUE) |>
-  ggplot(aes(x = time, y = bpm, fill = power)) +
-  geom_raster() +
-  scale_fill_viridis_c(guide = "none") +
-  labs(x = "Time (s)", y = "Tempo (BPM)", title = "Still Crazy After All These Years") +
-  theme_classic()
+#still_crazy |>
+#  tempogram(window_size = 4, hop_size = 0.5, cyclic = TRUE) |>
+#  ggplot(aes(x = time, y = bpm, fill = power)) +
+#  geom_raster() +
+#  scale_fill_viridis_c(guide = "none") +
+#  labs(x = "Time (s)", y = "Tempo (BPM)", title = "Still Crazy After All These Years") +
+#  theme_classic()
 
 
 ```
 
+Analysis {data-width=400}
+----------------------------------------------
 ***
 
 Even though the lines in this tempogram aren't very clear, it could be said that the clearest tempo is around 110bpm. When listening and tapping along myself, I predict it is probably around 60bpm.
 
+Tempograms He Was My Brother
+=============================================
+
+Tempograms He Was My Brother {data-width=600}
+--------------------------------------------
+
 ### Tempograms He Was My Brother
 
 ``` {r echo=FALSE, message=FALSE, warning=FALSE}
-he_was_my_brother <- get_tidy_audio_analysis("5K1aYLWFU4FZlqldlYX8Yg?si=d56b1ba144f2408f")
+# he_was_my_brother <- get_tidy_audio_analysis("5K1aYLWFU4FZlqldlYX8Yg?si=d56b1ba144f2408f")
 
-he_was_my_brother |>
-  tempogram(window_size = 2, hop_size = 0.5, cyclic = TRUE) |>
-  ggplot(aes(x = time, y = bpm, fill = power)) +
-  geom_raster() +
-  scale_fill_viridis_c(guide = "none") +
-  labs(x = "Time (s)", y = "Tempo (BPM)", title = "He Was My Brother - Wednesday Morning 3 A.M.") +
-  theme_classic()
+# he_was_my_brother |>
+#  tempogram(window_size = 2, hop_size = 0.5, cyclic = TRUE) |>
+#  ggplot(aes(x = time, y = bpm, fill = power)) +
+#  geom_raster() +
+#  scale_fill_viridis_c(guide = "none") +
+#  labs(x = "Time (s)", y = "Tempo (BPM)", title = "He Was My Brother - Wednesday Morning 3 A.M.") #+
+#  theme_classic()
 
-he_was_my_brother_pssb <- get_tidy_audio_analysis("3SqYkfrdqy0JHZFHSqrTGJ?si=ffcb7d7984fa43ff")
+#he_was_my_brother_pssb <- get_tidy_audio_analysis("3SqYkfrdqy0JHZFHSqrTGJ?si=ffcb7d7984fa43ff")
 
-he_was_my_brother_pssb |>
-  tempogram(window_size = 2, hop_size = 0.5, cyclic = TRUE) |>
-  ggplot(aes(x = time, y = bpm, fill = power)) +
-  geom_raster() +
-  scale_fill_viridis_c(guide = "none") +
-  labs(x = "Time (s)", y = "Tempo (BPM)", title = "He Was My Brother - The Paul Simon Songbook") +
-  theme_classic()
+#he_was_my_brother_pssb |>
+#  tempogram(window_size = 2, hop_size = 0.5, cyclic = TRUE) |>
+#  ggplot(aes(x = time, y = bpm, fill = power)) +
+#  geom_raster() +
+#  scale_fill_viridis_c(guide = "none") +
+#  labs(x = "Time (s)", y = "Tempo (BPM)", title = "He Was My Brother - The Paul Simon Songbook") +
+#  theme_classic()
 
 
 ```
 
+Analysis {data-width=400}
+----------------------------------------------
 ***
 
 If we squint our eyes we can see a vague (almost similar) line in the tempograms for the two versions of He Was My Brother. The tempo the line shows is more likely than the 200bpm outlier on the previous tap. The line starts somewhere around 90bpm and travels up towards 110bpm. Because the song was probably played in life, it's not strange that the tempo had gone up a little towards the end of the song. 
 
+Tempogram Seven Psalms
+===============================================
+
+Tempogram Seven Psalms {data-width=600}
+------------------------------------------------
+
 ### Tempogram Seven Psalms
 
 ``` {r echo=FALSE, message=FALSE, warning=FALSE}
-seven_psalms <- get_tidy_audio_analysis("3Y7ZWE3zat6O9YhMm44qCf?si=d262640e22f94420")
+#seven_psalms <- get_tidy_audio_analysis("3Y7ZWE3zat6O9YhMm44qCf?si=d262640e22f94420")
 
-red_lines <- c(364, 549, 852, 1209, 1339, 1588, 1749)
+#red_lines <- c(364, 549, 852, 1209, 1339, 1588, 1749)
 
-seven_psalms |>
-  tempogram(window_size = 4, hop_size = 1, cyclic = TRUE) |>
-  ggplot(aes(x = time, y = bpm, fill = power)) +
-  geom_raster() +
-  geom_vline(xintercept = red_lines, color = "coral2", linewidth = 2) +  
-  scale_fill_viridis_c(guide = "none") +
-  labs(x = "Time (s)", y = "Tempo (BPM)", title = "Seven Psalms") +
-  theme_classic()
+#seven_psalms |>
+#  tempogram(window_size = 4, hop_size = 1, cyclic = TRUE) |>
+#  ggplot(aes(x = time, y = bpm, fill = power)) +
+#  geom_raster() +
+#  geom_vline(xintercept = red_lines, color = "coral2", linewidth = 2) +  
+#  scale_fill_viridis_c(guide = "none") +
+#  labs(x = "Time (s)", y = "Tempo (BPM)", title = "Seven Psalms") +
+#  theme_classic()
 ```
 
+Analysis {data-width=400}
+----------------------------------------------
 ***
 Just like the other tempograms, this plot for the album Seven Psalms is quite hard to read. It also took a long time to plot, not only because it is a tempogram, but also because the song (which is actually an album consisting of one track) is 33 minutes long. You can see in the plot that there are a few blue vertical lines. Here, a new psalm begins, and the tempo slightly changes.
 
-### Homework week 10
+Chordograms top middle bottom songs
+=============================================
+
+Chordograms top middle bottom songs {data-width=600}
+---------------------------------------------
+
+### Chordograms top middle bottom songs
 
 ``` {r echo=FALSE, message=FALSE, warning=FALSE}
 
@@ -492,277 +1086,12 @@ track_chord |>
 
 ```
 
+Analyis {data-width=400}
+--------------------------------------
+
 ***
 Here you can see nine chordograms for each song of the top-middle-bottom list. In contrast to chromagrams and cepstrograms, for chordograms, the more blue a part is, the more present the chord. This chordogram devides the tracks into beats, and the distances are euclidean.
 
 On several chordograms there are multiple blue lines, which suggests that certain chords are continuously present during the whole track. This is, musically speaking, unlikely. The showing of multiple lines can be explained by the fact that there are probably multiple chords played (on different times) during the tracks, which share the same certain notes. 
 
-### Welcome
-
-With the information and analyses on this storyboard, I aim to investigate the ongoing reinvention of Paul Simon's colorful variety of music.
-
-Paul Simon grew up in a multicultural environment and has always been eager to explore new music traditions. Throughout his long career, Simon has been inspired by a lot of genres, and has applied bits of multiple traditions on the same album, even on the same songs. I want to investigate how Spotify describes his albums to see how his style has changed over time.
-
-For this, I will investigate the albums he made in his solo career, as well as the ones he made together with Art Garfunkel for Simon & Garfunkel. I've added a list of these on the right side of the page.
-
-I expect that I will find the biggest differences in audio features in the from the second half of his solo career, especially from Graceland on. But because Simon has always been experimenting with different styles, the results of my research could be surprising.
-
-Paul Simon has explained that for several songs, he took used aspects of 5 to 6 genres and musical tradition. The audio labels Spotify will give to his albums will probably not be as detailed as a description of Paul Simon himself.
-
-Identifying several tracks in my corpus as typical or atypical is difficult, because Simon’s discography is so widely diverse (which inspired this corpus :) But, in terms of his image as an American folk(rock) singer, the tracks from his Simon & Garfunkel period will be most typical, and his later solo albums most untypical, as his musical exploration only grew more and more.
-
-***
-<div style="clear:both;"></div>
-
-<img src="https://scontent-ams2-1.xx.fbcdn.net/v/t31.18172-8/12968175_10154106120702264_1105485326390735971_o.jpg?_nc_cat=100&ccb=1-7&_nc_sid=7a1959&_nc_ohc=cPDKPBdUXjYAX99kRJW&_nc_ht=scontent-ams2-1.xx&oh=00_AfD-X0tYTEiuidrYyaezIhXIyXnakNnReWfKtGsLMhU9jA&oe=660966A7" alt="Paul Simon" style="max-width: 100%; height: auto;">
-
-------------------------------------------------------------------------
-
-My corpus consists of 19 studio albums:
-
-Simon & Garfunkel
-
--   Wednesday Morning, 3 A.M. (1964)
--   Sounds of Silence (1966)
--   Parsley, Sage, Rosemary and Thyme (1966)
--   Bookends (1968)
--   Bridge Over Troubled Water (1970)
-
-Solo career
-
--   The Paul Simon Songbook (1965)
--   Paul Simon (1972)
--   There Goes Rhymin’ Simon (1973)
--   Still Crazy After All These Years (1975)
--   One-Trick Pony (1980)
--   Heart And Bones (1983)
--   Graceland (1986)
--   The Rhythm Of The Saints (1990)
--   Songs From The Capeman (1997)
--   You’re The One (2000)
--   Surprise (2006)
--   So Beautiful or So What (2011)
--   Stranger To Stranger (2016)
--   In The Blue Light (2018)
--   Seven Psalms (2023)
-
-### Speechiness in Paul Simon's discography
-
-``` {r echo=FALSE, message=FALSE, warning=FALSE}
-
-library(tidyverse)
-library(tidyr)
-library(spotifyr)
-library(dplyr)
-library(ggplot2)
-library(plotly)
-
-playlist_id <- "3c05QD0xQj86tsLjw3dyBx?si=a3d2688c709f4dfc" #Paul Simon
-#playlist_id <- "17AzxLBzKJW9bl7GHDreNk?si=1d79ec49fb6948c8" #Hans Zimmer
-api_token <- "8a2cd487c77f405ebcb3db44defb486a"
-discography <- get_playlist_audio_features("", playlist_id)
-
-# Use %>% to pipe the result of group_by() into summarise()
-summary_df <- discography %>%
-  group_by(track.album.name) %>%
-  summarise(
-    mean_speechiness = mean(speechiness),
-    release_date = first(track.album.release_date)) %>%
-  mutate(mean_speechiness = mean_speechiness*100)
-
-summary_discography <- summary_df %>%
-  pivot_longer(
-    cols = starts_with("mean_"),
-    names_to = "feature",
-    values_to = "mean_speechiness"  )
-
-# Convert release_date to Date format
-summary_discography$release_date <- as.Date(summary_discography$release_date)
-
-# Arrange summary_discography by release_date in ascending order
-summary_discography <- summary_discography %>%
-  arrange(release_date)
-
-# Convert track.album.name to a factor with levels ordered by release_date
-summary_discography$track.album.name <- factor(summary_discography$track.album.name, 
-                                               levels = summary_discography$track.album.name)
-
-
-my_ggplot <- ggplot(data = summary_discography, aes(x = mean_speechiness, y = release_date)) +
-  geom_col(aes(y = track.album.name), color = "coral2", fill = "coral2") +
-  theme_classic() +
-  labs(x = "Mean Speechiness", y = "Album", title = "Mean Speechiness across Paul Simon's albums")
-
-ggplotly(my_ggplot)
-
-```
-***
-Here you can see the mean amount of speechiness per Paul Simon Album. (I am not sure how this will add to my research on his reinvention but I needed a way to practice making plots first :)
-Spotify measures speechiness from 0.0 to 1.0 (I've multiplied the results by 10). The mean speechiness of the album Bookends is above 10, which is probably the result of an error that I have to look into. I do know that Bookends has a track called 'Voices of Old People', which only consists of snippets of interviews Art Garfunkel did with the elderly in a retirement home and doesn't contain any music. This could be a reason for the error.
-
--------------------------------------------------------------------------
-### Discography arranged by popularity
-
-```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=10}
-
-library(flexdashboard)
-library(plotly)
-library(tidyverse)
-library(spotifyr)
-library(compmus)
-library(ggplot2)
-library(gridExtra)
-library(dplyr)
-
-
-playlist_id <- "3c05QD0xQj86tsLjw3dyBx?si=a3d2688c709f4dfc" #Paul Simon
-#playlist_id <- "17AzxLBzKJW9bl7GHDreNk?si=1d79ec49fb6948c8" #Hans Zimmer
-api_token <- "8a2cd487c77f405ebcb3db44defb486a"
-discography <- get_playlist_audio_features("", playlist_id)
-
-# maak chromagrammen
-
-discography_arranged_for_popularity <- discography %>%
-  arrange(desc(track.popularity)) %>%
-  filter(!is.na(track.preview_url)) %>%
-  filter(!grepl("live", track.name, ignore.case = TRUE))
-
-top <- head(discography_arranged_for_popularity, 3)
-bottom <- tail(discography_arranged_for_popularity, 3)
-
-n_rows <- nrow(discography_arranged_for_popularity)
-middle_row <- ceiling(n_rows / 2)
-middle <- discography_arranged_for_popularity[(middle_row - 1):(middle_row + 1), ]
-
-top_middle_bottom_songs <- rbind(top, middle, bottom)
-top_middle_bottom_songs <- rev(top_middle_bottom_songs)
-
-
-# Bepaal de oorspronkelijke volgorde van de nummers in de tabel
-originele_volgorde <- factor(top_middle_bottom_songs$track.name, levels = unique(top_middle_bottom_songs$track.name))
-
-# Maak de plot met behoud van de oorspronkelijke volgorde van de nummers
-my_ggplot2 <- ggplot(top_middle_bottom_songs, aes(x = track.popularity, y = originele_volgorde)) +
-  geom_col(color = "coral2", fill = "coral2") +
-  theme_classic() +
-  labs(x = "Popularity", y = "3 Top, middle and bottom songs", title = "Popularity of the 3 top, middle and bottom songs")
-
-plot(my_ggplot2)
-
-```
-
-***
-I want to see if there is any variety in tonality across Paul Simon's most popular, mid popular and least popular songs. For this I will investigate the chroma features (pitches) of the three top songs, three middle songs and three bottom songs in Paul Simon's discography. On the left you can see a graph in which the popularity rate of these nine songs is displayed. It's interesting to see that his 3 least popular songs are all from his album Songs From The Capeman, which he wrote for his musical The Capeman.
-
-### Chromagrams and cepstrograms for each song
-``` {r echo=FALSE, message=FALSE, warning=FALSE}
-
-# Maak chromagrammen
-
-analyseer_muziek <- function(track) {
-  # Haal de audio-analyse op voor het opgegeven nummer
-  audio_analyse <- get_tidy_audio_analysis(track$track.id)
-  
-  # Selecteer de segmenten en breng ze samen
-  segmenten <- audio_analyse %>%
-    select(segments) %>%
-    unnest(segments)
-  
-  # Normaliseer de pitches
-  genormaliseerde_pitches <- segmenten %>%
-    mutate(pitches = map(pitches, compmus_normalise, "euclidean")) %>%
-    compmus_gather_chroma()
-  
-  # Plot de chroma features
-  plot_chroma <- ggplot(
-    genormaliseerde_pitches,
-    aes(
-      x = start + duration / 2,
-      width = duration,
-      y = pitch_class,
-      fill = value
-    )
-  ) +
-    geom_tile() +
-    labs(x = "Tijd (s)", y = NULL, fill = "Magnitude", title = paste("popularity index: ", track$track.popularity, " - ", track$track.name)) +
-    theme_minimal() +
-    scale_fill_viridis_c()
-  
-  #ggplotly(plot)
-  print(plot_chroma)
-}
-
-# all_plot_chroma <- for (i in 1:nrow(top_middle_bottom_songs)) {
-#  analyseer_muziek(top_middle_bottom_songs[i,])
-# }
-# Maak cepstrogrammen
-
-library(tidyverse)
-library(spotifyr)
-library(compmus)
-library(ggplot2)
-library(gridExtra)
-
-
-analyseer_muziek_timbre <- function(track) {
-  # Haal de audio-analyse op voor het opgegeven nummer
-#  audio_analyse <- get_tidy_audio_analysis(track$track.id)
-  
-  # Selecteer de segmenten en breng ze samen
-#  segmenten <- audio_analyse %>%
-analyseer_muziek_timbre<-
- get_tidy_audio_analysis(track$track.id) |> # Change URI.
-  compmus_align(bars, segments) |>                     # Change `bars`
-  select(bars) |>                                      #   in all three
-  unnest(bars) |>                                      #   of these lines.
-  mutate(
-    pitches =
-      map(segments,
-        compmus_summarise, pitches,
-        method = "rms", norm = "euclidean"              # Change summary & norm.
-      )
-  ) |>
-  mutate(
-    timbre =
-      map(segments,
-        compmus_summarise, timbre,
-        method = "rms", norm = "euclidean"              # Change summary & norm.
-      )
-  )
-
-# Check if there's any issue with the data transformation
-paul_simon_timbre <- analyseer_muziek_timbre |> compmus_gather_timbre()
-
-# Check if there's any issue with the ggplot aesthetics
-plot_timbre <- ggplot(
-  data = paul_simon_timbre,
-  aes(
-    x = start + duration / 2,
-    width = duration,
-    y = basis,
-    fill = value
-  )
-) +
-geom_tile() +
-labs(x = "Tijd (s)", y = NULL, fill = "Magnitude", title = paste("popularity index: ", track$track.popularity, " - ", track$track.name)) +
-scale_fill_viridis_c() +                              
-theme_classic()
-
-print(plot_timbre)
-}
-
-for (i in 1:nrow(top_middle_bottom_songs)) {
-  analyseer_muziek(top_middle_bottom_songs[i,])
-  analyseer_muziek_timbre(top_middle_bottom_songs[i,])
-  paste(" ")
-}
-
-```
-
-***
-On this page the chromagrams as well as the cepstrograms for all nine top, middle and bottom songs are displayed.
-
-We can see that for the three most popular songs of Paul Simon, the tonality is quite clear (Mrs.Robison is in F#, You Can Call Me Al in C and The Sound of Silence in F#). It's interesting to see that for the middle and bottom songs, the tonality is much less clear.
-
-For most of the songs of the list the timbre consists of multiple levels, only The Big Bright Green Pleasure Machine and Night Game have fewer levels (mostly co2). So, according to these plots, Paul Simon often likes to use a lot of elements that result in a wide range of timbre. I think this is also hearable in the recordings, in which he stacks a lot of instruments, rhythms and sound snippets on top of each other, creating multiple levels of sound.
 
