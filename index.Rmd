@@ -30,255 +30,6 @@ library(gridExtra)
 knitr::opts_chunk$set(cache = TRUE, cache.lazy = FALSE)
 ```
 
-Dendrogram of three albums
-=============================================
-
-Dendrogram of three albums {data-width=600}
--------------------------------------
-
-### Dendrogram of three albums
-
-
-```{undefined echo=FALSE}
-
-library(tidyverse)
-library(tidymodels)
-library(ggdendro)
-library(heatmaply)
-library(spotifyr)
-library(compmus)
-
-get_conf_mat <- function(fit) {
-  outcome <- .get_tune_outcome_names(fit)
-  fit |> 
-    collect_predictions() |> 
-    conf_mat(truth = outcome, estimate = .pred_class)
-}  
-
-get_pr <- function(fit) {
-  fit |> 
-    conf_mat_resampled() |> 
-    group_by(Prediction) |> mutate(precision = Freq / sum(Freq)) |> 
-    group_by(Truth) |> mutate(recall = Freq / sum(Freq)) |> 
-    ungroup() |> filter(Prediction == Truth) |> 
-    select(class = Prediction, precision, recall)
-}  
-
-rhythm_saints <- get_playlist_audio_features("spotify", "0ThkWjioGYlNBCfmUytGgF?si=5955ebc6059b448f") 
-parsley_sage_rosemary_thyme <- get_playlist_audio_features("spotify", "7wq0p4uiHpzs8W3jNhRxHe?si=2ce370b41e014c90")
-so_beautiful_so_what <- get_playlist_audio_features("spotify", "1xcvLzwOZLIRiXN0BS10pM?si=8977801b81ac469a") 
-
-three_albums <-
-  bind_rows(
-    rhythm_saints |> mutate(playlist = "Rhythm of the Saints"),
-    parsley_sage_rosemary_thyme |> mutate(playlist = "Parsley, Sage, Rosemary & Thyme"),
-    so_beautiful_so_what |> mutate(playlist = "So Beautiful or So What") 
-  ) |> 
-  add_audio_analysis()
-
-# Note that you are not allowed to have duplicate songs in the dataset! 
-three_albums |>
-  count(track.name) %>%
-  arrange(desc(n))
-
-# Grab only track names where it's listed more than once
-tracks_to_remove <- three_albums |>
-  count(track.name) |>
-  filter(n >= 2) %>%
-  select(track.name)
-
-three_albums <- three_albums %>%
-  anti_join(tracks_to_remove)
-
-# Similar to code from class, still trying to predict track.name but later we add on playlist name!
-three_albums_juice <-
-  recipe(
-    track.name ~
-      danceability +
-      energy +
-      loudness +
-      speechiness +
-      acousticness +
-      instrumentalness +
-      liveness +
-      valence +
-      tempo,
-    data = three_albums
-  ) |>
-  step_center(all_predictors()) |>
-  step_scale(all_predictors()) |> 
-  # step_range(all_predictors()) |> 
-  prep(three_albums |> mutate(track.name = str_trunc(track.name, 20))) |>
-  juice() |>
- column_to_rownames("track.name")
-
-three_albums_dist <- dist(three_albums_juice, method = "euclidean")
-
-data_for_three_albums_clustering <- three_albums_dist |> 
-  hclust(method = "average") |> # average for a balanced tree!
-  dendro_data() 
-
-playlist_data_for_join <- three_albums %>%
-  select(track.name, playlist_name) %>%
-  mutate(label = str_trunc(track.name, 20))
-
-data_for_three_albums_clustering$labels <- data_for_three_albums_clustering$labels %>%
-  left_join(playlist_data_for_join)
-
-# Add factor so can use colouring! 
-data_for_three_albums_clustering$labels$label <- factor(data_for_three_albums_clustering$labels$label)
-
-data_for_three_albums_clustering |>
-  ggdendrogram() +
-  geom_text(data = label(data_for_three_albums_clustering), aes(x, y, 
-                                   label=label, 
-                                   hjust=0,
-                                   vjust=0.5,
-                                   colour=playlist_name), size=1.8) +
-    geom_segment(aes(x = x, y = y, xend = xend, yend = yend), 
-               size = 0.7, color = "grey", data = data_for_three_albums_clustering$segments,
-               height = 0.5) +
-  coord_flip() + 
-  scale_y_reverse(expand=c(0.2, 0)) +
-  theme(axis.line.y=element_blank(),
-        axis.ticks.y=element_blank(),
-        axis.text.y=element_blank(),
-        axis.title.y=element_blank(),
-        panel.background=element_rect(fill="white"),
-        panel.grid=element_blank(),
-        legend.position = "right") +
-  labs(title = "Clustering of 3 random albums") +
-  guides(
-    colour = guide_legend(
-      title = "Albums",
-      keywidth = 0.5,  # Adjust the size of legend items
-      keyheight = 0.7
-      
-    )
-) +
-  theme(plot.margin = margin(0, 5, 0, 0))  
-```
-
-Analysis {data-width=400}
--------------------------------------
-***
-
-For this next analysis, I want to compare the features of Paul Simon songs from different albums using a dendrogram. Because a dendrogram will get too elaborate and messy when I compare all Paul Simon albums, I've split his discography into three different periods; his early work and his time with Simon & Garfunkel (1964-1970), his peak solo career (1972-1990) and his later work (1983-2023). From each period, I've randomly chosen an album to compare in a dendrogram: Parsley, Sage, Rosemary and Thyme (1966), The Rhythm of the Saints (1990) and So Beautiful or So What (2011).
-
-The dendrogram is been constructed from similarities found on danceability, energy, loudness, speechiness, acousticness, instrumentalness, liveness, valence and tempo features, and is using an "average" clustering method.
-
-Most clusters are made of a few songs of the same album. The biggest similarities can be found in the Parsley, Sage, Rosemary and Thyme album. The first (biggest) similarity between two songs from from two different albums is the one between The Cool, Cool River (Rhythm of the Saints) and A Poem On The Underground Wall (Parsley, Sage Rosemary and Thyme).
-
-Unfortunately the dendrogram cannot show us on what features caused the similarity of The Cool, Cool River and A Poem For The Underground Wall. Listening to the songs, I think similarities can be found in the ongoing 'running' of the rhythm, which doesn't seem to stop and has a vivacious effect. But to see on which features these clusters are based exactly, I've made a heatmap on the next tab.
-
-Heatmap of three albums
-===============================================
-
-Heatmap of three albums {data-width=600}
------------------------------------------------
-### Heatmap of three albums
-
-``` {r echo=false}
-
-library(tidyverse)
-library(tidymodels)
-library(ggdendro)
-library(heatmaply)
-library(spotifyr)
-library(compmus)
-
-get_conf_mat <- function(fit) {
-  outcome <- .get_tune_outcome_names(fit)
-  fit |> 
-    collect_predictions() |> 
-    conf_mat(truth = outcome, estimate = .pred_class)
-}  
-
-get_pr <- function(fit) {
-  fit |> 
-    conf_mat_resampled() |> 
-    group_by(Prediction) |> mutate(precision = Freq / sum(Freq)) |> 
-    group_by(Truth) |> mutate(recall = Freq / sum(Freq)) |> 
-    ungroup() |> filter(Prediction == Truth) |> 
-    select(class = Prediction, precision, recall)
-}  
-
-rhythm_saints <- get_playlist_audio_features("spotify", "0ThkWjioGYlNBCfmUytGgF?si=5955ebc6059b448f") 
-parsley_sage_rosemary_thyme <- get_playlist_audio_features("spotify", "7wq0p4uiHpzs8W3jNhRxHe?si=2ce370b41e014c90")
-so_beautiful_so_what <- get_playlist_audio_features("spotify", "1xcvLzwOZLIRiXN0BS10pM?si=8977801b81ac469a") 
-
-three_albums <-
-  bind_rows(
-    rhythm_saints |> mutate(playlist = "Rhythm of the Saints"),
-    parsley_sage_rosemary_thyme |> mutate(playlist = "Parsley, Sage, Rosemary & Thyme"),
-    so_beautiful_so_what |> mutate(playlist = "So Beautiful or So What") 
-  ) |> 
-  add_audio_analysis()
-
-# Note that you are not allowed to have duplicate songs in the dataset! 
-three_albums |>
-  count(track.name) %>%
-  arrange(desc(n))
-
-# Grab only track names where it's listed more than once
-tracks_to_remove <- three_albums |>
-  count(track.name) |>
-  filter(n >= 2) %>%
-  select(track.name)
-
-three_albums <- three_albums %>%
-  anti_join(tracks_to_remove)
-
-# Similar to code from class, still trying to predict track.name but later we add on playlist name!
-three_albums_juice <-
-  recipe(
-    track.name ~
-       danceability +
-      energy +
-      loudness +
-      speechiness +
-      acousticness +
-      instrumentalness +
-      liveness +
-      valence +
-      tempo,
-    data = three_albums
-  ) |>
-  step_center(all_predictors()) |>
-  step_scale(all_predictors()) |> 
-  # step_range(all_predictors()) |> 
-  prep(three_albums |> mutate(track.name = str_trunc(track.name, 20))) |>
-  juice() |>
- column_to_rownames("track.name")
-
-three_albums_dist <- dist(three_albums_juice, method = "euclidean")
-
-# Create a vector of colors corresponding to each album
-album_colors <- c("Rhythm of the Saints" = "blue",
-                  "Parsley, Sage, Rosemary & Thyme" = "green",
-                  "So Beautiful or So What" = "red")
-
-# Map each track name to its corresponding album color
-track_colors <- album_colors[data_for_three_albums_clustering$labels$playlist_name]
-
-# Create HTML markup for track names with color based on album
-track_names_html <- sapply(seq_along(three_albums_juice), function(i) {
-  paste0("<span style='color:", track_colors[i], "'>", rownames(three_albums_juice)[i], "</span>")
-})
-
-heatmaply(
-  three_albums_juice,
-  hclustfun = hclust,
-  hclust_method = "average",  # Change for single, average, or complete linkage.
-  dist_method = "euclidean",
-  fontsize_row = 8,  # Adjust the font size for rows
-  fontsize_col = 8,  # Adjust the font size for columns
-  labels_col = track_names_html  # Assign colors to track names
-)
-
-
-```
-
 Welcome
 ===============================================
 
@@ -292,11 +43,12 @@ Paul Simon grew up in a multicultural environment and has always been eager to e
 
 For this, I will investigate the albums he made in his solo career, as well as the ones he made together with Art Garfunkel for Simon & Garfunkel. I've added a list of these on the right side of the page.
 
-I expect that I will find the biggest differences in audio features in the from the second half of his solo career, especially from Graceland on. But because Simon has always been experimenting with different styles, the results of my research could be surprising.
-
-Paul Simon has explained that for several songs, he took used aspects of 5 to 6 genres and musical tradition. The audio labels Spotify will give to his albums will probably not be as detailed as a description of Paul Simon himself.
+I expect that I will find the biggest differences in audio features from the second half of his solo career, especially from Graceland on. But because Simon has always been experimenting with different styles, the results of my research could be surprising.
 
 Identifying several tracks in my corpus as typical or atypical is difficult, because Simon’s discography is so widely diverse (which inspired this corpus :) But, in terms of his image as an American folk(rock) singer, the tracks from his Simon & Garfunkel period will be most typical, and his later solo albums most untypical, as his musical exploration only grew more and more.
+
+Paul Simon has explained that for several songs, he took used aspects of 5 to 6 genres and musical tradition. The audio labels Spotify will give to his albums will not be as detailed as a description of Paul Simon himself. For this research I have focussed on a few specific Spotify's features: speechiness, popularity, tempo, timbre pitch classes, chords and keys.
+
 
 Picture {data-width=400}
 ------------------------------------------------------------------
@@ -502,9 +254,6 @@ analyseer_muziek <- function(track) {
   print(plot_chroma)
 }
 
-# all_plot_chroma <- for (i in 1:nrow(top_middle_bottom_songs)) {
-#  analyseer_muziek(top_middle_bottom_songs[i,])
-# }
 # Maak cepstrogrammen
 
 library(tidyverse)
@@ -515,11 +264,7 @@ library(gridExtra)
 
 
 analyseer_muziek_timbre <- function(track) {
-  # Haal de audio-analyse op voor het opgegeven nummer
-#  audio_analyse <- get_tidy_audio_analysis(track$track.id)
-  
-  # Selecteer de segmenten en breng ze samen
-#  segmenten <- audio_analyse %>%
+
 analyseer_muziek_timbre<-
  get_tidy_audio_analysis(track$track.id) |> # Change URI.
   compmus_align(bars, segments) |>                     # Change `bars`
@@ -588,7 +333,6 @@ Tempo across Paul Simon's albums {data-width=600}
 ``` {r echo=FALSE, message=FALSE, warning=FALSE}
 
 playlist_id <- "3c05QD0xQj86tsLjw3dyBx?si=a3d2688c709f4dfc" #Paul Simon
-#playlist_id <- "17AzxLBzKJW9bl7GHDreNk?si=1d79ec49fb6948c8" #Hans Zimmer
 api_token <- "8a2cd487c77f405ebcb3db44defb486a"
 discography <- get_playlist_audio_features("", playlist_id)
 
@@ -1046,7 +790,7 @@ track_chord <- get_tidy_audio_analysis("5nXttSmu05MFgYSJtvdXbt") |>
 
 track_chord |> 
   compmus_match_pitch_template(
-    chord_templates,         # Change to chord_templates if descired
+    chord_templates,         # Change to chord_templates if desired
     method = "euclidean",  # Try different distance metrics
     norm = "manhattan"     # Try different norms
   ) |>
@@ -1095,3 +839,249 @@ Here you can see nine chordograms for each song of the top-middle-bottom list. I
 On several chordograms there are multiple blue lines, which suggests that certain chords are continuously present during the whole track. This is, musically speaking, unlikely. The showing of multiple lines can be explained by the fact that there are probably multiple chords played (on different times) during the tracks, which share the same certain notes. 
 
 
+Dendrogram of three albums
+=============================================
+
+Dendrogram of three albums {data-width=600}
+-------------------------------------
+
+### Dendrogram of three albums
+
+
+```{r echo=FALSE}
+
+library(tidyverse)
+library(tidymodels)
+library(ggdendro)
+library(heatmaply)
+library(spotifyr)
+library(compmus)
+
+get_conf_mat <- function(fit) {
+  outcome <- .get_tune_outcome_names(fit)
+  fit |> 
+    collect_predictions() |> 
+    conf_mat(truth = outcome, estimate = .pred_class)
+}  
+
+get_pr <- function(fit) {
+  fit |> 
+    conf_mat_resampled() |> 
+    group_by(Prediction) |> mutate(precision = Freq / sum(Freq)) |> 
+    group_by(Truth) |> mutate(recall = Freq / sum(Freq)) |> 
+    ungroup() |> filter(Prediction == Truth) |> 
+    select(class = Prediction, precision, recall)
+}  
+
+rhythm_saints <- get_playlist_audio_features("spotify", "0ThkWjioGYlNBCfmUytGgF?si=5955ebc6059b448f") 
+parsley_sage_rosemary_thyme <- get_playlist_audio_features("spotify", "7wq0p4uiHpzs8W3jNhRxHe?si=2ce370b41e014c90")
+so_beautiful_so_what <- get_playlist_audio_features("spotify", "1xcvLzwOZLIRiXN0BS10pM?si=8977801b81ac469a") 
+
+three_albums <-
+  bind_rows(
+    rhythm_saints |> mutate(playlist = "Rhythm of the Saints"),
+    parsley_sage_rosemary_thyme |> mutate(playlist = "Parsley, Sage, Rosemary & Thyme"),
+    so_beautiful_so_what |> mutate(playlist = "So Beautiful or So What") 
+  ) |> 
+  add_audio_analysis()
+
+# Note that you are not allowed to have duplicate songs in the dataset! 
+three_albums |>
+  count(track.name) %>%
+  arrange(desc(n))
+
+# Grab only track names where it's listed more than once
+tracks_to_remove <- three_albums |>
+  count(track.name) |>
+  filter(n >= 2) %>%
+  select(track.name)
+
+three_albums <- three_albums %>%
+  anti_join(tracks_to_remove)
+
+# Similar to code from class, still trying to predict track.name but later we add on playlist name!
+three_albums_juice <-
+  recipe(
+    track.name ~
+      danceability +
+      energy +
+      loudness +
+      speechiness +
+      acousticness +
+      instrumentalness +
+      liveness +
+      valence +
+      tempo,
+    data = three_albums
+  ) |>
+  step_center(all_predictors()) |>
+  step_scale(all_predictors()) |> 
+  # step_range(all_predictors()) |> 
+  prep(three_albums |> mutate(track.name = str_trunc(track.name, 20))) |>
+  juice() |>
+ column_to_rownames("track.name")
+
+three_albums_dist <- dist(three_albums_juice, method = "euclidean")
+
+data_for_three_albums_clustering <- three_albums_dist |> 
+  hclust(method = "average") |> # average for a balanced tree!
+  dendro_data() 
+
+playlist_data_for_join <- three_albums %>%
+  select(track.name, playlist_name) %>%
+  mutate(label = str_trunc(track.name, 20))
+
+data_for_three_albums_clustering$labels <- data_for_three_albums_clustering$labels %>%
+  left_join(playlist_data_for_join)
+
+# Add factor so can use colouring! 
+data_for_three_albums_clustering$labels$label <- factor(data_for_three_albums_clustering$labels$label)
+
+data_for_three_albums_clustering |>
+  ggdendrogram() +
+  geom_text(data = label(data_for_three_albums_clustering), aes(x, y, 
+                                   label=label, 
+                                   hjust=0,
+                                   vjust=0.5,
+                                   colour=playlist_name), size=1.8) +
+    geom_segment(aes(x = x, y = y, xend = xend, yend = yend), 
+               size = 0.7, color = "grey", data = data_for_three_albums_clustering$segments,
+               height = 0.5) +
+  coord_flip() + 
+  scale_y_reverse(expand=c(0.2, 0)) +
+  theme(axis.line.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.text.y=element_blank(),
+        axis.title.y=element_blank(),
+        panel.background=element_rect(fill="white"),
+        panel.grid=element_blank(),
+        legend.position = "right") +
+  labs(title = "Clustering of 3 random albums") +
+  guides(
+    colour = guide_legend(
+      title = "Albums",
+      keywidth = 0.5,  # Adjust the size of legend items
+      keyheight = 0.7
+      
+    )
+) +
+  theme(plot.margin = margin(0, 5, 0, 0))  
+```
+
+Analysis {data-width=400}
+-------------------------------------
+***
+
+For this next analysis, I want to compare the features of Paul Simon songs from different albums using a dendrogram. Because a dendrogram will get too elaborate and messy when I compare all Paul Simon albums, I've split his discography into three different periods; his early work and his time with Simon & Garfunkel (1964-1970), his peak solo career (1972-1990) and his later work (1983-2023). From each period, I've randomly chosen an album to compare in a dendrogram: Parsley, Sage, Rosemary and Thyme (1966), The Rhythm of the Saints (1990) and So Beautiful or So What (2011).
+
+The dendrogram is been constructed from similarities found on danceability, energy, loudness, speechiness, acousticness, instrumentalness, liveness, valence and tempo features, and is using an "average" clustering method.
+
+Most clusters are made of a few songs of the same album. The biggest similarities can be found in the Parsley, Sage, Rosemary and Thyme album. The first (biggest) similarity between two songs from from two different albums is the one between The Cool, Cool River (Rhythm of the Saints) and A Poem On The Underground Wall (Parsley, Sage Rosemary and Thyme).
+
+Unfortunately the dendrogram cannot show us on what features caused the similarity of The Cool, Cool River and A Poem For The Underground Wall. Listening to the songs, I think similarities can be found in the ongoing 'running' of the rhythm, which doesn't seem to stop and has a vivacious effect. But to see on which features these clusters are based exactly, I've made a heatmap on the next tab.
+
+Heatmap of three albums
+===============================================
+
+Heatmap of three albums {data-width=600}
+-----------------------------------------------
+### Heatmap of three albums
+
+``` {r echo=FALSE}
+
+library(tidyverse)
+library(tidymodels)
+library(ggdendro)
+library(heatmaply)
+library(spotifyr)
+library(compmus)
+
+get_conf_mat <- function(fit) {
+  outcome <- .get_tune_outcome_names(fit)
+  fit |> 
+    collect_predictions() |> 
+    conf_mat(truth = outcome, estimate = .pred_class)
+}   
+
+get_pr <- function(fit) {
+  fit |> 
+    conf_mat_resampled() |> 
+    group_by(Prediction) |> mutate(precision = Freq / sum(Freq)) |> 
+    group_by(Truth) |> mutate(recall = Freq / sum(Freq)) |> 
+    ungroup() |> filter(Prediction == Truth) |> 
+    select(class = Prediction, precision, recall)
+}  
+
+rhythm_saints <- get_playlist_audio_features("spotify", "0ThkWjioGYlNBCfmUytGgF?si=5955ebc6059b448f") 
+parsley_sage_rosemary_thyme <- get_playlist_audio_features("spotify", "7wq0p4uiHpzs8W3jNhRxHe?si=2ce370b41e014c90")
+so_beautiful_so_what <- get_playlist_audio_features("spotify", "1xcvLzwOZLIRiXN0BS10pM?si=8977801b81ac469a") 
+
+three_albums <-
+  bind_rows(
+    rhythm_saints |> mutate(playlist = "Rhythm of the Saints"),
+    parsley_sage_rosemary_thyme |> mutate(playlist = "Parsley, Sage, Rosemary & Thyme"),
+    so_beautiful_so_what |> mutate(playlist = "So Beautiful or So What") 
+  ) |> 
+  add_audio_analysis()
+
+# Note that you are not allowed to have duplicate songs in the dataset! 
+three_albums |>
+  count(track.name) %>%
+  arrange(desc(n))
+
+# Grab only track names where it's listed more than once
+tracks_to_remove <- three_albums |>
+  count(track.name) |>
+  filter(n >= 2) %>%
+  select(track.name)
+
+three_albums <- three_albums %>%
+  anti_join(tracks_to_remove)
+
+# Similar to code from class, still trying to predict track.name but later we add on playlist name!
+three_albums_juice <-
+  recipe(
+    track.name ~
+       danceability +
+      energy +
+      loudness +
+      speechiness +
+      acousticness +
+      instrumentalness +
+      liveness +
+      valence +
+      tempo,
+    data = three_albums
+  ) |>
+  step_center(all_predictors()) |>
+  step_scale(all_predictors()) |> 
+  # step_range(all_predictors()) |> 
+  prep(three_albums |> mutate(track.name = str_trunc(track.name, 20))) |>
+  juice() |>
+ column_to_rownames("track.name")
+
+three_albums_dist <- dist(three_albums_juice, method = "euclidean")
+
+# Create a vector of colors corresponding to each album
+album_colors <- c("Rhythm of the Saints" = "blue",
+                  "Parsley, Sage, Rosemary & Thyme" = "green",
+                  "So Beautiful or So What" = "red")
+
+# Map each track name to its corresponding album color
+track_colors <- album_colors[data_for_three_albums_clustering$labels$playlist_name]
+
+# Create HTML markup for track names with color based on album
+track_names_html <- sapply(seq_along(three_albums_juice), function(i) {
+  paste0("<span style='color:", track_colors[i], "'>", rownames(three_albums_juice)[i], "</span>")
+})
+
+heatmaply(
+  three_albums_juice,
+  hclustfun = hclust,
+  hclust_method = "average",  # Change for single, average, or complete linkage.
+  dist_method = "euclidean",
+  fontsize_row = 8,  # Adjust the font size for rows
+  fontsize_col = 8,  # Adjust the font size for columns
+  labels_col = track_names_html  # Assign colors to track names
+)
+```
