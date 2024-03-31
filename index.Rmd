@@ -917,7 +917,7 @@ Unfortunately the dendrogram cannot show us on what features caused the similari
 
 ### Heatmap of three albums {data-width=600}
 
-``` {r echo=FALSE}
+``` {r echo=FALSE, message=FALSE, warning=FALSE}
 
 library(tidyverse)
 library(tidymodels)
